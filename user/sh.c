@@ -13,6 +13,9 @@
 
 #define MAXARGS 10
 
+#define BLUE "\033[96m"
+#define RESET "\x1b[0m"
+
 struct cmd {
   int type;
 };
@@ -72,14 +75,45 @@ runcmd(struct cmd *cmd)
   default:
     panic("runcmd");
 
-  case EXEC:
+    case EXEC:
     ecmd = (struct execcmd*)cmd;
-    if(ecmd->argv[0] == 0)
-      exit(1);
-    exec(ecmd->argv[0], ecmd->argv);
-    fprintf(2, "exec %s failed\n", ecmd->argv[0]);
-    break;
-
+    if(ecmd->argv[0] && strcmp(ecmd->argv[0], "!") == 0) {
+        char *msg = ecmd->argv[1];
+        if(msg) {
+            if(strlen(msg) > 512) {
+                printf("Message too long\n");
+                exit(1);
+            }
+    //  Add os 
+    char *os = "os";
+    char name[512];
+    name[0] = ' ';
+    int i = 0;
+    int j = 0;
+    while(msg[i] != '\0'){
+      if(msg[i] == 'o' && msg[i + 1] =='s'){
+        if(j != 0)
+          printf("%s", name);
+        printf(BLUE "%s" RESET, os);
+        i += 2;
+        j = 0;
+        continue;
+      }
+      name[j] = msg[i];
+      j++;
+      i++;
+    }
+      if(j != 0)
+        printf("%s\n", name);
+      else
+        printf("\n"); 
+      }
+        exit(0);
+    }
+      if(ecmd->argv[0] == 0)
+        exit(1);
+      exec(ecmd->argv[0], ecmd->argv);
+      break;
   case REDIR:
     rcmd = (struct redircmd*)cmd;
     close(rcmd->fd);
