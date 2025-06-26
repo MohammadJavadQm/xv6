@@ -8,6 +8,14 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct thread; //(Forward declaration for struct thread)
+
+// Declarations for thread-related kernel functions
+void exitthread();
+void freethread(struct thread *t);
+struct thread* allocthread (uint64 start_thread, uint64 stack_address, uint64 arg);
+int jointhread(uint id); // Note: this is the kernel's jointhread, not the syscall sys_jointhread
+void sleepthread(int n, uint ticks0);
 
 // bio.c
 void            binit(void);
