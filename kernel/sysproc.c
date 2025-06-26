@@ -69,6 +69,15 @@ sys_sleep(void)
     n = 0;
   acquire(&tickslock);
   ticks0 = ticks;
+
+  // Check if current process has a current_thread (i.e., we are in a thread context)
+  if (myproc()->current_thread && myproc()->current_thread->id != myproc()->pid) { // If it's a non-main thread
+      release(&tickslock); // Release lock before calling sleepthread
+      sleepthread(n, ticks0); // Call thread-specific sleep function
+      return 0; // Return after sleepthread (it handles its own sched())
+  }
+
+  // Existing sleep logic for processes (or main thread)
   while(ticks - ticks0 < n){
     if(killed(myproc())){
       release(&tickslock);

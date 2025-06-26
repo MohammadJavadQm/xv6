@@ -37,24 +37,22 @@ void
 usertrap(void)
 {
   int which_dev = 0;
-
+  struct proc *p = myproc(); // Get the current process
+  
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
-
-  struct proc *p = myproc();
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
   if(r_scause() == 8){
     // system call
-
     if(killed(p))
-      exit(-1);
+      exit(-1); // Process is killed, exit it
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
@@ -64,23 +62,35 @@ usertrap(void)
     // so enable only now that we're done with those registers.
     intr_on();
 
-    syscall();
+    syscall(); // Call the syscall handler
   } else if((which_dev = devintr()) != 0){
-    // ok
+    // ok, device interrupt handled
+  } else if (p->current_thread && p->current_thread->id != p->pid) {
+      // This trap is from a non-main thread (not the process itself)
+      // Check for specific error types (e.g., page fault, illegal instruction)
+      // If it's a fatal error for the thread, exit only the thread.
+      // 0xc is page fault, maybe other relevant scause values depending on the specific error
+      if (r_sepc() != r_stval() || r_scause() != 0xc) { // General check for unexpected traps/faults
+          printf("usertrap(): thread unexpected scause 0x%lx pid=%d tid=%d\n", r_scause(), p->pid, p->current_thread->id);
+          printf("  sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+      }
+      exitthread(); // Exit only the thread, not the whole process
   } else {
+    // Original error handling for the main process
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
-    setkilled(p);
+    printf("           sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    setkilled(p); // Mark the process as killed
   }
 
+  // If the process (or main thread) was killed, exit it
   if(killed(p))
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
-    yield();
+    yield(); // Yield if it's a timer interrupt
 
-  usertrapret();
+  usertrapret(); // Return to user space
 }
 
 //
@@ -102,7 +112,7 @@ usertrapret(void)
 
   // set up trapframe values that uservec will need when
   // the process next traps into the kernel.
-  p->trapframe->kernel_satp = r_satp();         // kernel page table
+  p->trapframe->kernel_satp = r_satp();        // kernel page table
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
   p->trapframe->kernel_trap = (uint64)usertrap;
   p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
@@ -215,4 +225,3 @@ devintr()
     return 0;
   }
 }
-
