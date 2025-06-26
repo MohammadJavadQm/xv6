@@ -51,6 +51,6 @@
 
         printf("DONE\n");
 
-        exit(); // Exit the main process
+        exit(0); // Exit the main process
     }
     

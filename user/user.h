@@ -1,6 +1,6 @@
 struct stat;
 
-// system calls
+// System calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
@@ -24,21 +24,24 @@ int sleep(int);
 int uptime(void);
 int trigger(void);
 
+// Thread system calls (custom)
+int thread(void *start_routine, int *stack_address, void *arg);
+int jointhread(int thread_id);
 
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
-void *memmove(void*, const void*, int);
-char* strchr(const char*, char c);
+void* memmove(void*, const void*, int);
+char* strchr(const char*, char);
 int strcmp(const char*, const char*);
-void fprintf(int, const char*, ...) __attribute__ ((format (printf, 2, 3)));
-void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
-char* gets(char*, int max);
+void fprintf(int, const char*, ...) __attribute__((format(printf, 2, 3)));
+void printf(const char*, ...) __attribute__((format(printf, 1, 2)));
+char* gets(char*, int);
 uint strlen(const char*);
 void* memset(void*, int, uint);
 int atoi(const char*);
-int memcmp(const void *, const void *, uint);
-void *memcpy(void *, const void *, uint);
+int memcmp(const void*, const void*, uint);
+void* memcpy(void*, const void*, uint);
 
 // umalloc.c
 void* malloc(uint);
