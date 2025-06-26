@@ -102,4 +102,43 @@ sys_uptime(void)
   return xticks;
 }
 
+// kernel/sysproc.c
 
+// ... (rest of the file, after sys_uptime function) ...
+
+
+// Implementation of the thread system call
+// Allocates a new thread in the current process
+uint64
+sys_thread(void)
+{
+  uint64 start_thread, stack_address, arg;
+
+  // Retrieve arguments from user space
+  // argaddr() helps fetch argument values from the user's registers/stack
+  argaddr(0, &start_thread);    // Function pointer for the new thread's entry point
+  argaddr(1, &stack_address);   // Base address of the new thread's stack
+  argaddr(2, &arg);             // Argument to pass to the thread function
+
+  // Call the kernel function to allocate and initialize a new thread
+  // This function (allocthread) will be implemented later.
+  struct thread *t = allocthread(start_thread, stack_address, arg);
+
+  // Return the new thread's ID, or 0 if allocation failed
+  return t ? t->id : 0;
+}
+
+// Implementation of the jointhread system call
+// Allows the current thread to wait for a specific thread to terminate
+uint64
+sys_jointhread(void)
+{
+  int id;
+
+  // Retrieve the thread ID to join with from user space
+  argint(0, &id);
+
+  // Call the kernel function to perform the join operation
+  // This function (jointhread) will be implemented later.
+  return jointhread(id);
+}

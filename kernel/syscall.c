@@ -134,9 +134,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_jointhread] sys_jointhread, 
 };
 
-void
 // kernel/syscall.c
-
 void
 syscall(void)
 {
