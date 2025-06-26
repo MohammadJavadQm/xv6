@@ -102,6 +102,8 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_trigger(void);
+extern uint64 sys_thread(void);
+extern uint64 sys_jointhread(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -128,22 +130,41 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_trigger] sys_trigger,
+[SYS_thread]  sys_thread,      
+[SYS_jointhread] sys_jointhread, 
 };
+
+void
+// kernel/syscall.c
 
 void
 syscall(void)
 {
   int num;
   struct proc *p = myproc();
+  // Store the current thread before syscall execution
+  struct thread *oldt = p->current_thread;
+  uint64 ret;
 
   num = p->trapframe->a7;
+
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
-    p->trapframe->a0 = syscalls[num]();
+    ret = syscalls[num]();
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
-    p->trapframe->a0 = -1;
+    ret = -1;
+  }
+
+  // After syscall execution, check if the current thread has changed (e.g., due to exitthread)
+  struct thread *newt = p->current_thread;
+  if (oldt != newt) { // If the thread has changed (e.g., exitthread called and scheduled another thread)
+      if (!oldt) // If oldt was null, it means there was no current thread (should not happen for a syscall from a thread)
+         oldt = &p->threads[0]; // Fallback to first thread for safety if oldt somehow became null
+      oldt->trapframe->a0 = ret; // Store return value in the old thread's trapframe (if it still exists)
+  } else { // If the thread is the same, just update its trapframe
+      p->trapframe->a0 = ret;
   }
 }
