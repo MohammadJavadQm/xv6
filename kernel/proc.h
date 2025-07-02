@@ -80,6 +80,18 @@ struct trapframe {
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum threadstate { THREAD_UNUSED, THREAD_EMBRYO, THREAD_RUNNABLE, THREAD_RUNNING, THREAD_JOINED, THREAD_SLEEPING };
+
+struct thread {
+  enum threadstate state;    // Thread state
+  struct trapframe *trapframe; // saved user registers (Pointer to trapframe)
+  uint64 id;                  // Thread ID
+  uint join;                  // For thread_join() (Flag or counter for join)
+  int sleep_n;               // For timed sleeps (number of ticks to sleep)
+  uint sleep_tick0;           // For timed sleeps (start tick of sleep)
+  // Potentially need a context struct here too, if it's not part of trapframe directly for context switching
+  // For now, let's stick to what the document explicitly mentions.
+};
 
 // Per-process state
 struct proc {
@@ -104,4 +116,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // NEW fields for multi-threading (Added as per project document):
+  struct thread threads[NTHREAD];   // Array of threads belonging to the process
+  struct thread *current_thread;    // Pointer to the currently running thread
 };
