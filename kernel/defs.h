@@ -8,10 +8,11 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct thread; // NEW: Forward declaration for struct thread
 
 // bio.c
 void            binit(void);
-struct buf*     bread(uint, uint);
+struct buf* bread(uint, uint);
 void            brelse(struct buf*);
 void            bwrite(struct buf*);
 void            bpin(struct buf*);
@@ -26,9 +27,9 @@ void            consputc(int);
 int             exec(char*, char**);
 
 // file.c
-struct file*    filealloc(void);
+struct file* filealloc(void);
 void            fileclose(struct file*);
-struct file*    filedup(struct file*);
+struct file* filedup(struct file*);
 void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
@@ -37,9 +38,9 @@ int             filewrite(struct file*, uint64, int n);
 // fs.c
 void            fsinit(int);
 int             dirlink(struct inode*, char*, uint);
-struct inode*   dirlookup(struct inode*, char*, uint*);
-struct inode*   ialloc(uint, short);
-struct inode*   idup(struct inode*);
+struct inode* dirlookup(struct inode*, char*, uint*);
+struct inode* ialloc(uint, short);
+struct inode* idup(struct inode*);
 void            iinit();
 void            ilock(struct inode*);
 void            iput(struct inode*);
@@ -47,8 +48,8 @@ void            iunlock(struct inode*);
 void            iunlockput(struct inode*);
 void            iupdate(struct inode*);
 int             namecmp(const char*, const char*);
-struct inode*   namei(char*);
-struct inode*   nameiparent(char*, char*);
+struct inode* namei(char*);
+struct inode* nameiparent(char*, char*);
 int             readi(struct inode*, int, uint64, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, int, uint64, uint, uint);
@@ -60,7 +61,7 @@ void            ramdiskintr(void);
 void            ramdiskrw(struct buf*);
 
 // kalloc.c
-void*           kalloc(void);
+void* kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 
@@ -77,7 +78,7 @@ int             piperead(struct pipe*, uint64, int);
 int             pipewrite(struct pipe*, uint64, int);
 
 // printf.c
-int            printf(char*, ...) __attribute__ ((format (printf, 1, 2)));
+int             printf(char*, ...) __attribute__ ((format (printf, 1, 2)));
 void            panic(char*) __attribute__((noreturn));
 void            printfinit(void);
 
@@ -92,9 +93,10 @@ void            proc_freepagetable(pagetable_t, uint64);
 int             kill(int);
 int             killed(struct proc*);
 void            setkilled(struct proc*);
-struct cpu*     mycpu(void);
-struct cpu*     getmycpu(void);
-struct proc*    myproc();
+struct cpu* mycpu(void);
+struct cpu* getmycpu(void);
+struct proc* myproc(void);
+struct proc* allocproc(void); // ADDED/CONFIRMED: For userinit and fork
 void            procinit(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
@@ -106,6 +108,17 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+void            freeproc(struct proc *p); // ADDED/CONFIRMED: For proper cleanup
+
+// thread management functions (NEW SECTION)
+int             alloctid(void); // NEW: Allocate a unique thread ID
+struct thread *allocthread(uint64 start_thread, uint64 stack_address, uint64 arg);
+void            freethread(struct thread *t);
+void            exitthread(void);
+int             jointhread(uint id); // CORRECTED: Changed 'int id' to 'uint id'
+void            sleepthread(int n, uint ticks0); // CORRECTED: Changed return type to 'void'
+struct thread* thread_schd(struct proc *p); // NEW: Thread scheduler within a process
+void            init_main_thread(struct proc *p); // NEW: Helper for main thread initialization
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -126,12 +139,12 @@ void            initsleeplock(struct sleeplock*, char*);
 
 // string.c
 int             memcmp(const void*, const void*, uint);
-void*           memmove(void*, const void*, uint);
-void*           memset(void*, int, uint);
-char*           safestrcpy(char*, const char*, int);
+void* memmove(void*, const void*, uint);
+void* memset(void*, int, uint);
+char* safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
-char*           strncpy(char*, const char*, int);
+char* strncpy(char*, const char*, int);
 
 // syscall.c
 void            argint(int, int*);
@@ -168,7 +181,7 @@ int             uvmcopy(pagetable_t, pagetable_t, uint64);
 void            uvmfree(pagetable_t, uint64);
 void            uvmunmap(pagetable_t, uint64, uint64, int);
 void            uvmclear(pagetable_t, uint64);
-pte_t *         walk(pagetable_t, uint64, int);
+pte_t * walk(pagetable_t, uint64, int);
 uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
@@ -190,4 +203,3 @@ void            virtio_disk_intr(void);
 
 //trigger
 uint64 sys_trigger(void);
-

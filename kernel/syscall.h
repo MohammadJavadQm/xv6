@@ -21,4 +21,5 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_trigger 22  // یا عدد بعدی آزاد، مثلاً اگر آخرین SYS_ مقدار 21 بود
-
+#define SYS_thread 23
+#define SYS_jointhread 24

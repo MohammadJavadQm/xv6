@@ -79,8 +79,8 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
-enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
-enum threadstate { THREAD_UNUSED, THREAD_EMBRYO, THREAD_RUNNABLE, THREAD_RUNNING, THREAD_JOINED, THREAD_SLEEPING };
+enum procstate { UNUSED, USED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum threadstate { THREAD_UNUSED, THREAD_EMBRYO, THREAD_RUNNABLE, THREAD_RUNNING, THREAD_JOINED, THREAD_SLEEPING, THREAD_ZOMBIE };
 
 struct thread {
   enum threadstate state;    // Thread state
@@ -89,6 +89,9 @@ struct thread {
   uint join;                  // For thread_join() (Flag or counter for join)
   int sleep_n;               // For timed sleeps (number of ticks to sleep)
   uint sleep_tick0;           // For timed sleeps (start tick of sleep)
+  struct context context;
+  uint64 kstack;
+  void *chan;
   // Potentially need a context struct here too, if it's not part of trapframe directly for context switching
   // For now, let's stick to what the document explicitly mentions.
 };

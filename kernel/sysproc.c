@@ -102,4 +102,31 @@ sys_uptime(void)
   return xticks;
 }
 
+uint64
+sys_thread(void)
+{
+  uint64 start_thread, stack_address, arg;
 
+  // Read arguments from user space registers
+  argaddr(0, &start_thread); // NO if condition here
+  argaddr(1, &stack_address); // NO if condition here
+  argaddr(2, &arg);         // NO if condition here
+
+  // Call allocthread (we'll implement this next) to create and prepare the thread
+  struct thread *t = allocthread(start_thread, stack_address, arg);
+
+  // Return the thread ID (tid) if successful, -1 otherwise
+  return t ? t->id : -1;
+}
+
+uint64
+sys_jointhread(void)
+{
+  int id; // Thread ID
+
+  // Read the thread ID argument
+  argint(0, &id); // NO if condition here
+
+  // Call jointhread (we'll implement this next) to wait for the specified thread
+  return jointhread(id);
+}
