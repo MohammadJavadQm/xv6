@@ -63,6 +63,7 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       // p->kstack = KSTACK((int) (p - proc)); // Kstack for process is now allocated in allocproc
+      p->current_thread = 0; // NEW: Initialize current_thread to indicate no active thread
   }
 }
 
@@ -122,18 +123,6 @@ alloctid(void)
   return tid;
 }
 
-// Select a runnable thread from the process's thread array.
-struct thread*
-thread_schd(struct proc *p) {
-    struct thread *t;
-    for (t = p->threads; t < p->threads + NTHREAD; t++) {
-        if (t->state == THREAD_RUNNABLE) {
-            return t;
-        }
-    }
-    return 0; // No runnable thread found in this process
-}
-
 // Initialize the first thread for a new process.
 void
 init_main_thread(struct proc *p) {
@@ -155,6 +144,50 @@ init_main_thread(struct proc *p) {
     main_t->state = THREAD_RUNNABLE;
 }
 
+struct thread *
+initthread(struct proc *p)
+{
+  // If the process is new or being re-initialized, clear out old thread data.
+  // This loop ensures all thread slots are clean before setting up the main thread.
+  // This is the top snippet from the slide.
+  // We will always clean up all thread slots when a process is allocated,
+  // as allocproc will call this for a new process.
+  for (int i = 0; i < NTHREAD; ++i) {
+    // freethread handles kfree for trapframe and kstack if they were allocated.
+    freethread(&p->threads[i]);
+    // Explicitly clear pointers and state if freethread doesn't set them to 0.
+    // (freethread already sets them to 0, but this ensures initial clean state)
+    p->threads[i].trapframe = 0;
+    p->threads[i].kstack = 0;
+    p->threads[i].id = 0;
+    p->threads[i].join = 0;
+    p->threads[i].sleep_n = 0;
+    p->threads[i].sleep_tick0 = 0;
+    p->threads[i].chan = 0;
+    memset(&p->threads[i].context, 0, sizeof(p->threads[i].context));
+    p->threads[i].state = THREAD_UNUSED;
+  }
+
+  // Initialize the main thread (p->threads[0]) - This is the bottom snippet from the slide.
+  struct thread *main_t = &p->threads[0];
+  main_t->id = p->pid; // Main thread's ID is process's PID
+
+  // The main thread uses the process's primary trapframe and kernel stack.
+  // These are already allocated in allocproc.
+  main_t->trapframe = p->trapframe; // Use process's allocated trapframe
+  main_t->kstack = p->kstack;       // Use process's allocated kernel stack
+
+  // Initialize context for main thread (similar to allocproc's context init)
+  memset(&main_t->context, 0, sizeof(main_t->context));
+  main_t->context.ra = (uint64)forkret;
+  main_t->context.sp = p->kstack + PGSIZE; // Top of process's kernel stack
+
+  p->current_thread = main_t; // Set main thread as current for the process
+  main_t->state = THREAD_RUNNABLE; // Main thread is ready to run
+
+  return p->current_thread; // Return the initialized main thread
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -173,14 +206,16 @@ allocproc(void)
       p->pid = allocpid(); // Allocate process ID
       acquire(&p->lock); // Re-acquire proc lock
 
-      // Allocate kernel stack for the process (main thread's kstack)
+      // Allocate kernel stack for the process (main thread's kstack).
+      // This will be used by the main thread.
       if((p->kstack = (uint64)kalloc()) == 0){
         release(&p->lock);
         return 0;
       }
       memset((void*)p->kstack, 0, PGSIZE);
 
-      // Allocate and clear trapframe for the process (main thread's trapframe)
+      // Allocate and clear trapframe for the process (main thread's trapframe).
+      // This will be used by the main thread.
       if((p->trapframe = (struct trapframe *)kalloc()) == 0){
         kfree((void*)p->kstack);
         release(&p->lock);
@@ -188,17 +223,13 @@ allocproc(void)
       }
       memset((void*)p->trapframe, 0, PGSIZE);
 
-      // Initialize all thread slots in the process as UNUSED
-      for(int i = 0; i < NTHREAD; i++) {
-          p->threads[i].state = THREAD_UNUSED;
-          p->threads[i].id = 0;
-          p->threads[i].trapframe = 0;
-          p->threads[i].kstack = 0;
-          memset(&p->threads[i].context, 0, sizeof(p->threads[i].context));
+      // Initialize the process's thread array and its main thread.
+      // This function will set p->current_thread and p->threads[0].
+      if (initthread(p) == 0) { // Call initthread to set up main thread
+          freeproc(p); // If main thread init fails, free process
+          release(&p->lock);
+          return 0;
       }
-
-      // Initialize the main thread (first thread of the process)
-      init_main_thread(p);
 
       // An empty user page table.
       p->pagetable = proc_pagetable(p);
@@ -236,6 +267,53 @@ freethread(struct thread *t)
   t->sleep_tick0 = 0;
   memset(&t->context, 0, sizeof(t->context));
   t->state = THREAD_UNUSED;
+}
+
+struct thread*
+thread_schd(struct proc *p) {
+    struct thread *t;
+    struct thread *next_thread = 0; // The thread chosen to run
+
+    // If the process has a current thread and it was running,
+    // set its state to runnable if it's not already sleeping/zombie/etc.
+    // This handles the case where the previous thread yielded or was preempted.
+    if (p->current_thread && p->current_thread->state == THREAD_RUNNING) {
+        p->current_thread->state = THREAD_RUNNABLE;
+    }
+
+    // Acquire tickslock for checking timed sleeps
+    acquire(&tickslock);
+    uint ticks_current = ticks; // Get current ticks
+    release(&tickslock);
+
+    // Loop through all threads of the current process
+    for (t = p->threads; t < p->threads + NTHREAD; t++) {
+        // First, check for RUNNABLE threads
+        if (t->state == THREAD_RUNNABLE) {
+            next_thread = t;
+            break; // Found a runnable thread, prioritize it
+        }
+        // If not runnable, check for timed-out SLEEPING threads
+        else if (t->state == THREAD_SLEEPING && ticks_current - t->sleep_tick0 >= t->sleep_n) {
+            t->state = THREAD_RUNNABLE; // Wake up the thread
+            next_thread = t; // Make it the next runnable thread
+            break; // Prioritize this newly woken thread
+        }
+    }
+
+    if (next_thread != 0) {
+        // If a runnable thread was found (or woken up)
+        next_thread->state = THREAD_RUNNING; // Set its state to running
+        p->current_thread = next_thread;     // Set it as the process's current thread
+
+        // Copy the chosen thread's trapframe to the process's active trapframe.
+        // This ensures the correct user-level context is loaded when returning to user space.
+        *(p->trapframe) = *(next_thread->trapframe);
+
+        return next_thread; // Return the chosen thread
+    }
+
+    return 0; // No runnable thread found in this process
 }
 
 // Free a proc structure and the data hanging from it,

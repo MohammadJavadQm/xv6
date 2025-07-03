@@ -37,24 +37,34 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  struct proc *p = myproc();
+  struct thread *t = p->current_thread; // Get the current thread
 
+  // Check if trap is from user mode.
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
-  // send interrupts and exceptions to kerneltrap(),
+  // Ensure process and thread are in a valid state.
+  if(p->state == UNUSED)
+    panic("usertrap: p->state UNUSED");
+  if(t->state == THREAD_UNUSED) // Check thread state too
+    panic("usertrap: t->state UNUSED");
+
+  // Set up trapframe for kernel.
+  // The trapframe is where saved user registers are stored.
+  // p->trapframe is already set to t->trapframe in scheduler.
+  p->trapframe->epc = r_sepc();
+
+  // Send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
 
-  struct proc *p = myproc();
-  
-  // save user program counter.
-  p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
-    // system call
+  uint64 scause = r_scause();
 
+  if(scause == 8){
+    // System call
     if(killed(p))
-      exit(-1);
+      exit(-1); // If process is killed, exit
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
@@ -64,23 +74,73 @@ usertrap(void)
     // so enable only now that we're done with those registers.
     intr_on();
 
-    syscall();
+    syscall(); // Call the syscall handler
   } else if((which_dev = devintr()) != 0){
+    // Device interrupt
     // ok
-  } else {
+  }
+  // NEW LOGIC FOR THREAD-SPECIFIC TRAPS:
+  else if (p->current_thread && p->current_thread->id != p->pid) {
+    // This condition checks if the current context is a thread (not the main process thread)
+    // and an unexpected trap occurred.
+    // This means it's a thread-specific trap (e.g., page fault, illegal instruction)
+    // that should only terminate the thread, not the whole process.
+    // The specific check `r_sepc() != r_stval() || r_scause() != 0xc` from the slide
+    // is a common way to filter for certain types of unexpected traps.
+    // However, if any non-syscall/non-device trap occurs in a non-main thread,
+    // we generally want to terminate that thread.
+    // Let's use the simpler condition from the slide's "else if" block.
+    printf("usertrap(): thread unexpected scause 0x%lx pid=%d tid=%lu\n",r_scause(), p->pid, p->current_thread->id);
+    printf("             sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    exitthread(); // Terminate only the current thread
+  }
+  // END NEW LOGIC
+  else {
+    // Unknown trap or process-level trap (e.g., main process thread trap)
+    // This is the existing logic for handling process-level traps.
+    // It might kill the whole process.
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
-    setkilled(p);
+    printf("             sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    setkilled(p); // Mark process for killing
   }
 
-  if(killed(p))
-    exit(-1);
+  // Check if process/thread was killed during trap handling or by syscall
+  if(killed(p)) {
+    // If the process is killed, and this is the main thread, or the last thread,
+    // then exit the process.
+    // exitthread() already handles if it's the last thread.
+    // If it's the main thread and killed, it should exit.
+    // The original XV6 `exit(-1)` here means the whole process exits.
+    // We need to ensure `exitthread()` is called for threads, and `exit()` for processes.
+    // The `exitthread()` call in the `else if` block above handles thread-specific kills.
+    // This `if(killed(p)) exit(-1);` should apply to the process if it's killed.
+    // If `p->current_thread->id == p->pid` (main thread) and killed, then `exit(-1)`.
+    // Otherwise, if it's a non-main thread and killed, it should call `exitthread()`.
+    // The current structure implies that if a non-main thread gets an unexpected trap,
+    // it calls `exitthread()`. If the *process* is killed (e.g., via `kill` syscall),
+    // then this `if(killed(p))` block is for the process.
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+    // Let's refine this based on the original structure and new thread logic.
+    // If the process is marked killed, and we are in the main thread context, exit.
+    // If we are in a non-main thread context and it's killed, exitthread() would have been called.
+    if (p->current_thread->id == p->pid) { // If it's the main thread
+        exit(-1); // Exit the process
+    } else {
+        // If it's a non-main thread and process is killed,
+        // this thread should also exit.
+        exitthread(); // This will handle yielding or process exit if it's the last thread.
+    }
+  }
+
+
+  // Give up the CPU if this is a timer interrupt.
+  if(which_dev == 2) {
+    // If a thread is running, yield its CPU time.
+    // The `yield()` function now correctly sets `p->current_thread->state = THREAD_RUNNABLE`.
     yield();
+  }
 
-  usertrapret();
+  usertrapret(); // Return to user space or scheduler
 }
 
 //

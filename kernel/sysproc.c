@@ -63,14 +63,30 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
+  struct proc *p = myproc(); // Get current process
 
   argint(0, &n);
   if(n < 0)
     n = 0;
+
+  // NEW LOGIC FOR THREADS:
+  // If there's a current thread (meaning we are in a multi-threaded context),
+  // use sleepthread() for the thread instead of the process-wide sleep().
+  if (p->current_thread) { // Check if a thread is active in this process
+      acquire(&tickslock); // Acquire lock before accessing ticks
+      ticks0 = ticks;     // Get current ticks for timed sleep
+      release(&tickslock); // Release lock
+
+      sleepthread(n, ticks0); // Call thread-specific sleep
+      return 0; // Return after thread sleeps
+  }
+  // END NEW LOGIC
+
+  // Original process-wide sleep logic (if no current_thread or not multi-threaded)
   acquire(&tickslock);
   ticks0 = ticks;
   while(ticks - ticks0 < n){
-    if(killed(myproc())){
+    if(killed(p)){ // Use 'p' for process-level killed check
       release(&tickslock);
       return -1;
     }
